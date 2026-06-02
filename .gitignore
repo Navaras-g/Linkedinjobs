@@ -1,0 +1,16 @@
+venv/
+__pycache__/
+*.pyc
+
+.env
+cookies.json
+
+backend/jobs.db
+jobs.db
+
+node_modules/
+frontend/dist/
+
+.DS_Store
+.vscode/
+.idea/
