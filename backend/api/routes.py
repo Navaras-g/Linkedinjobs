@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from backend.db.crud import get_jobs, get_stats, update_job
+from backend.db.crud import create_scrape_run, get_jobs, get_stats, update_job
 from backend.db.database import SessionLocal
 from backend.db.models import Job, ScrapeRun
 from backend.scraper.scheduler import scrape_scheduler
@@ -139,10 +139,17 @@ def patch_job(job_id: int, payload: JobPatchPayload, db: Session = Depends(get_d
 
 
 @router.post("/scrape/trigger")
-def trigger_scrape() -> dict[str, Any]:
+async def trigger_scrape() -> dict[str, Any]:
     """Kick off an immediate scrape run in background task."""
-    asyncio.create_task(scrape_scheduler.trigger_scrape())
-    return {"message": "Scrape started", "run_id": None}
+    db = SessionLocal()
+    try:
+        scrape_run = create_scrape_run(db, status="running", started_at=datetime.utcnow())
+        run_id = scrape_run.id
+    finally:
+        db.close()
+
+    asyncio.create_task(scrape_scheduler.trigger_scrape(run_id=run_id))
+    return {"message": "Scrape started", "run_id": run_id}
 
 
 @router.get("/scrape/status")

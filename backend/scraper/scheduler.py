@@ -52,17 +52,18 @@ class ScrapeScheduler:
             self.scheduler.shutdown(wait=False)
             logger.info("Scraper scheduler shut down")
 
-    async def trigger_scrape(self) -> int | None:
+    async def trigger_scrape(self, run_id: int | None = None) -> int | None:
         """Trigger an immediate scrape and return created ScrapeRun id."""
-        return await self.run_scrape_job()
+        return await self.run_scrape_job(run_id=run_id)
 
-    async def run_scrape_job(self) -> int | None:
+    async def run_scrape_job(self, run_id: int | None = None) -> int | None:
         """Run one scrape cycle with deduplication and ScrapeRun logging."""
         async with self._lock:
             session: Session = SessionLocal()
             browser = LinkedInBrowserSession()
-            scrape_run = create_scrape_run(session, status="running", started_at=datetime.utcnow())
-            run_id = scrape_run.id
+            if run_id is None:
+                scrape_run = create_scrape_run(session, status="running", started_at=datetime.utcnow())
+                run_id = scrape_run.id
 
             try:
                 await browser.start()
