@@ -19,10 +19,20 @@ class LinkedInBrowserSession:
     """Manages a persistent Playwright context with cookie load/save support."""
 
     def __init__(self, cookies_path: str | None = None) -> None:
-        base_dir = Path(__file__).resolve().parent
+        project_root = Path(__file__).resolve().parents[2]
         configured_path = cookies_path or settings.cookies_path
-        self.cookies_path = (base_dir / configured_path).resolve()
-        self.user_data_dir = (base_dir / ".playwright-user-data").resolve()
+
+        candidate_cookies_path = Path(configured_path).expanduser()
+        if not candidate_cookies_path.is_absolute():
+            candidate_cookies_path = (project_root / candidate_cookies_path).resolve()
+        else:
+            candidate_cookies_path = candidate_cookies_path.resolve()
+
+        if candidate_cookies_path.parent != project_root:
+            raise ValueError("COOKIES_PATH must resolve to a file in the project root directory.")
+
+        self.cookies_path = candidate_cookies_path
+        self.user_data_dir = (project_root / ".playwright-user-data").resolve()
 
         self._playwright: Playwright | None = None
         self.context: BrowserContext | None = None
