@@ -37,6 +37,10 @@ export const apiClient = {
     return request(`/jobs${query ? `?${query}` : ""}`);
   },
 
+  getJob(jobId) {
+    return request(`/jobs/${jobId}`);
+  },
+
   getStats() {
     return request("/stats");
   },
