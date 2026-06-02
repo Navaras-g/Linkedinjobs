@@ -15,7 +15,7 @@ function buildPatchPayload(job, action) {
   return {};
 }
 
-export default function JobList({ jobs, onJobAction }) {
+export default function JobList({ jobs, onJobAction, onHideJob }) {
   const [expandedJobId, setExpandedJobId] = useState(null);
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -82,7 +82,7 @@ export default function JobList({ jobs, onJobAction }) {
             <button type="button" onClick={() => onJobAction(job.id, buildPatchPayload(job, "saved"))}>
               {job.saved ? "Unsave" : "Save"}
             </button>
-            <button type="button" onClick={() => onJobAction(job.id, buildPatchPayload(job, "hidden"))}>
+            <button type="button" onClick={() => onHideJob(job)}>
               Hide
             </button>
             <a href={job.url} target="_blank" rel="noreferrer">

@@ -123,3 +123,17 @@ a {
 a:hover {
   text-decoration: underline;
 }
+
+.toast {
+  position: sticky;
+  top: 12px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #eff6ff;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+}

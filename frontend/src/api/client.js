@@ -49,6 +49,10 @@ export const apiClient = {
     return request("/scrape/trigger", { method: "POST" });
   },
 
+  getScrapeStatus() {
+    return request("/scrape/status");
+  },
+
   patchJob(jobId, payload) {
     return request(`/jobs/${jobId}`, {
       method: "PATCH",

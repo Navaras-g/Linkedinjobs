@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { apiClient } from "../api/client";
 import JobList from "../components/JobList";
@@ -12,6 +12,10 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [scrapeLoading, setScrapeLoading] = useState(false);
   const [error, setError] = useState("");
+  const [hideToast, setHideToast] = useState(null);
+  const hideToastTimeoutRef = useRef(null);
+
+  const UNDO_WINDOW_MS = 5000;
 
   const jobQuery = useMemo(() => {
     const base = { hidden: false, keyword, page: 1, per_page: 20 };
@@ -79,6 +83,51 @@ export default function DashboardPage() {
     }
   };
 
+  const clearHideToastTimer = () => {
+    if (hideToastTimeoutRef.current) {
+      clearTimeout(hideToastTimeoutRef.current);
+      hideToastTimeoutRef.current = null;
+    }
+  };
+
+  const showHideToast = (job) => {
+    clearHideToastTimer();
+    setHideToast({ jobId: job.id, company: job.company, previousHidden: job.hidden });
+    hideToastTimeoutRef.current = setTimeout(() => {
+      setHideToast(null);
+      hideToastTimeoutRef.current = null;
+    }, UNDO_WINDOW_MS);
+  };
+
+  const handleHideJob = async (job) => {
+    try {
+      await apiClient.patchJob(job.id, { hidden: true });
+      showHideToast(job);
+      await Promise.all([loadJobs(), loadStats()]);
+    } catch (err) {
+      setError(err.message || "Failed to hide job");
+    }
+  };
+
+  const handleUndoHide = async () => {
+    if (!hideToast) {
+      return;
+    }
+
+    const { jobId, previousHidden } = hideToast;
+    clearHideToastTimer();
+    setHideToast(null);
+
+    try {
+      await apiClient.patchJob(jobId, { hidden: previousHidden });
+      await Promise.all([loadJobs(), loadStats()]);
+    } catch (err) {
+      setError(err.message || "Failed to undo hide");
+    }
+  };
+
+  useEffect(() => () => clearHideToastTimer(), []);
+
   return (
     <main>
       <header>
@@ -110,8 +159,21 @@ export default function DashboardPage() {
         />
       </section>
 
+      {hideToast ? (
+        <div className="toast" role="status">
+          <span>Hidden {hideToast.company}. </span>
+          <button type="button" onClick={handleUndoHide}>
+            Undo
+          </button>
+        </div>
+      ) : null}
+
       {error ? <p>{error}</p> : null}
-      {loading ? <p>Loading jobs...</p> : <JobList jobs={jobs} onJobAction={handleJobAction} />}
+      {loading ? (
+        <p>Loading jobs...</p>
+      ) : (
+        <JobList jobs={jobs} onJobAction={handleJobAction} onHideJob={handleHideJob} />
+      )}
     </main>
   );
 }
