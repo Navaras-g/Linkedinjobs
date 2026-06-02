@@ -11,5 +11,9 @@
   "devDependencies": {
     "typescript": "~6.0.2",
     "vite": "^8.0.12"
+  },
+  "dependencies": {
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
   }
 }
