@@ -71,7 +71,15 @@ async def _card_url(card: Locator) -> str:
 
 async def _extract_job_from_card(card: Locator) -> Job | None:
     """Parse a single LinkedIn job card into a Job dataclass."""
-    title = await _card_text(card, [".job-card-list__title", ".job-card-container__link", "a[aria-label]"])
+    title_raw = await _card_text(card, [".job-card-list__title", ".job-card-container__link", "a[aria-label]"])
+    # Deduplicate repeated title lines
+    title_lines = [l.strip() for l in title_raw.splitlines() if l.strip()]
+    seen_lines: list[str] = []
+    for line in title_lines:
+        if line not in seen_lines:
+            seen_lines.append(line)
+    title = seen_lines[0] if seen_lines else ""
+
     company = await _card_text(
         card,
         [".job-card-container__primary-description", ".artdeco-entity-lockup__subtitle", ".job-card-container__company-name"],
@@ -80,7 +88,13 @@ async def _extract_job_from_card(card: Locator) -> Job | None:
         card,
         [".job-card-container__metadata-item", ".artdeco-entity-lockup__caption", ".job-card-container__metadata-wrapper li"],
     )
-    posted_at = await _card_text(card, [".job-card-container__footer-item", "time", ".job-card-list__footer-wrapper li"])
+
+    posted_raw = await _card_text(card, [".job-card-container__footer-item", "time", ".job-card-list__footer-wrapper li"])
+    # Take only the first line, skip noise like "Promoted", "Viewed"
+    posted_lines = [l.strip() for l in posted_raw.splitlines() if l.strip()]
+    skip_values = {"promoted", "viewed", "featured"}
+    posted_at = next((l for l in posted_lines if l.lower() not in skip_values), posted_raw.splitlines()[0].strip() if posted_lines else "")
+
     url = await _card_url(card)
     linkedin_id = _extract_linkedin_id(url)
 
@@ -101,27 +115,93 @@ async def _extract_job_from_card(card: Locator) -> Job | None:
     )
 
 
-async def _scroll_jobs_page(page: Page, *, rounds: int = 12) -> None:
+async def _scroll_jobs_page(page: Page, *, rounds: int = 20) -> None:
     """Incrementally scroll jobs page to trigger lazy-loaded cards."""
-    previous_height = 0
+    container_js = """
+        (function() {
+            const selectors = [
+                '.jobs-job-board-list',
+                '.discovery-templates-vertical-list',
+                '.scaffold-layout__list',
+                '.jobs-search-results-list'
+            ];
+            for (const sel of selectors) {
+                const el = document.querySelector(sel);
+                if (el) { el.scrollBy(0, 800); return true; }
+            }
+            window.scrollBy(0, Math.floor(window.innerHeight * 0.9));
+            return false;
+        })()
+    """
+    previous_count = 0
+    stale_rounds = 0
     for _ in range(rounds):
-        await page.evaluate("window.scrollBy(0, Math.floor(window.innerHeight * 0.9))")
+        await page.evaluate(container_js)
         await _random_delay(page)
 
-        current_height = await page.evaluate("document.body.scrollHeight")
-        if current_height == previous_height:
-            break
-        previous_height = current_height
+        current_count = await page.evaluate(
+            "document.querySelectorAll('[data-occludable-job-id], [data-job-id], li.discovery-templates-entity-item').length"
+        )
+        if current_count == previous_count:
+            stale_rounds += 1
+            if stale_rounds >= 3:
+                break
+        else:
+            stale_rounds = 0
+        previous_count = current_count
+
+
+JOBS_URL = "https://www.linkedin.com/jobs/collections/recommended/?discover=recommended&discoveryOrigin=JOBS_HOME_JYMBII"
+
+# Ordered fallback selectors for the recommended feed card container
+CARD_SELECTORS = [
+    "li.discovery-templates-entity-item",
+    "li.jobs-job-board-list__item",
+    "li[data-occludable-job-id]",
+    "div[data-job-id]",
+    "li.scaffold-layout__list-item",
+]
 
 
 async def extract_jobs(page: Page) -> list[Job]:
-    """Navigate LinkedIn jobs page, scroll, and return visible job cards."""
-    await page.goto("https://www.linkedin.com/jobs/", wait_until="domcontentloaded")
+    """Navigate LinkedIn recommended jobs page, scroll, and return visible job cards."""
+    await page.goto(JOBS_URL, wait_until="domcontentloaded", timeout=30000)
     await _random_delay(page)
+
+    # Wait for at least one job card to appear before scrolling
+    try:
+        await page.wait_for_selector(
+            ", ".join(CARD_SELECTORS),
+            timeout=15000,
+        )
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning(
+            "No job cards appeared after 15s — page title: %s", await page.title()
+        )
+        return []
+
     await _scroll_jobs_page(page)
 
-    cards = page.locator("li.jobs-search-results__list-item, .jobs-search-results-list__list-item")
-    count = await cards.count()
+    # Try each selector, use first that returns results
+    cards = None
+    count = 0
+    for selector in CARD_SELECTORS:
+        candidate = page.locator(selector)
+        n = await candidate.count()
+        if n > 0:
+            cards = candidate
+            count = n
+            import logging
+            logging.getLogger(__name__).info("Using selector '%s' — found %d cards", selector, n)
+            break
+
+    if cards is None or count == 0:
+        import logging
+        logging.getLogger(__name__).warning(
+            "All selectors returned 0 cards. Page title: %s", await page.title()
+        )
+        return []
 
     seen_ids: set[str] = set()
     jobs: list[Job] = []

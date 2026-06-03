@@ -72,11 +72,7 @@ class LinkedInBrowserSession:
         return await self.context.new_page()
 
     async def ensure_session_valid(self, page: Page | None = None) -> None:
-        """
-        Validate authenticated session by checking LinkedIn login redirect.
-
-        Raises SessionExpiredError when the session is invalid.
-        """
+        """Validate authenticated session by checking LinkedIn login redirect."""
         if self.context is None:
             raise RuntimeError("Browser context is not started. Call start() first.")
 
@@ -109,12 +105,23 @@ class LinkedInBrowserSession:
 
         cookies: Any = json.loads(raw)
         if isinstance(cookies, dict):
-            # Some exporters wrap cookie list in an object.
             cookies = cookies.get("cookies", [])
         if not isinstance(cookies, list):
             return
 
-        await self.context.add_cookies(cookies)
+        valid_same_site = {"Strict", "Lax", "None"}
+        cleaned = []
+        for cookie in cookies:
+            if "sameSite" in cookie:
+                val = str(cookie["sameSite"]).capitalize()
+                cookie["sameSite"] = val if val in valid_same_site else "None"
+            cookie.pop("hostOnly", None)
+            cookie.pop("session", None)
+            cookie.pop("storeId", None)
+            cookie.pop("id", None)
+            cleaned.append(cookie)
+
+        await self.context.add_cookies(cleaned)
 
     async def _save_cookies(self) -> None:
         """Save updated browser cookies back to cookies.json."""
